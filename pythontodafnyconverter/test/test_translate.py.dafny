@@ -1,0 +1,7 @@
+import nose
+import translate
+import ast
+
+class TestTranslate(unittest.TestCase):
+
+    def test_translate_one_arg(self):                                    
