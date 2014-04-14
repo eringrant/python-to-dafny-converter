@@ -3,18 +3,16 @@ try:
 except: ImportError:
     from distutils.core import setup
 
-config = {
-    'description' : ''
-    'author': 'Erin Grant'
-    'url': ''
-    'download_url': ''
-    'author_email': 'e.grant41@gmail.com'
-    'version': 0.1
-    'install_requires': ['nose'],
-    'packages': ['NAME'],
-    'scripts': [],
-    'name': 'projectname'
-}
-
-setup(**config)
-
+setup(
+    name='DafnyToPythonConverter',
+    version='0.1.0',
+    author='Erin Grant',
+    author_email='e.grant41@gmail.com',
+    packages=['translate', 'test_translate'],
+    scripts=[],
+    url='',
+    license='LICENSE.txt',
+    description='',
+    long_description=open('README.txt').read(),
+    install_requires=['nose'],
+)

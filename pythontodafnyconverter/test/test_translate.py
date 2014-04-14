@@ -1,5 +1,7 @@
+import os
+import unittest
 import nose
-import translate
+import pythontodafnyconverter.translate
 import ast
 
 
@@ -10,13 +12,13 @@ class TestTranslate(unittest.TestCase):
         value, no preconditions, and no postconditions.
         """
 
-        with open('identity_function.py') as f:
-            source = f.readlines()
+        with open("/home/erin/Git/PythonToDafnyConverter/pythontodafnyconverter/test/identity_function.py") as f:
+            source = f.read()
 
-        with open('identity_function.py.dafny') as f:
-            expected = f.readlines()
+        actual = pythontodafnyconverter.translate.initiate_translation(source)
 
-        tree = ast.parse(source, 'eval')
-        actual = translate.translate(tree)
+        with open('./test/identity_function.py.dafny') as f:
+            expected = f.read()
 
         self.assertEqual(actual, expected)
+

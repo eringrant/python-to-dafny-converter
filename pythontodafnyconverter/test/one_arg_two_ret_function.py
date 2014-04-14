@@ -1,4 +1,4 @@
-def clone(x: int) -> int, int:
+def clone(x: int) -> (int, int):
     """Return two copies of x.
     """
 
