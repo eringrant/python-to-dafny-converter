@@ -18,6 +18,40 @@ import ast
 # Restrict import
 __all__ = ['translate']
 
+
+class Error(Exception):
+    """Base class for exceptions in this module."""
+
+    pass
+
+class NoAttributeError(Error):
+    """Exception raised when no Dafny source code exists.
+
+    Attributes:
+        attr -- attribute which is missing
+        msg -- explanation of the error
+    """
+
+    # Override.
+    def __init__(self, attr, msg):
+        self.attr = attr
+        self.msg = msg
+
+
+class NoPreconditionError(NoAttributeError):
+    """Exception raised when no precondition is defined."""
+
+    pass
+
+
+class NoPostconditionError(NoAttributeError):
+    """Exception raised when no postcondition is defined."""
+
+    pass
+
+class ForLoopError(Error):
+    """Exception raised when a for loop is encountered."""
+
 def translate(source):
     """Return a string containing the Dafny translation of the Python source
     code in string source.
@@ -27,14 +61,14 @@ def translate(source):
     tree = ast.parse(source)
 
     dafny_translator = DafnyTranslator()
-    return translator.initiate_translate(tree)
+    return dafny_translator.initiate_translate(tree)
 
 
 class DafnyTranslator(ast.NodeVisitor):
     """Translate Python code into Dafny code."""
 
     def __init__(self):
-        self.src = ""  # Dafny source code to be built upon.
+        self.src = Nonce # Dafny source code to be built upon.
         self.indent = 0  # Scope indentation level.
 
     def initiate_translate(self, node):
@@ -56,8 +90,7 @@ class DafnyTranslator(ast.NodeVisitor):
         """Render a block of code with the correct indentation.
         """
         self.indent += 2
-        for stmt in body:
-            self.visit(stmt)
+        for stmt in body: self.visit(stmt)
         self.indent -= 2
 
     def visit_FunctionDef(self, defn):
@@ -68,15 +101,24 @@ class DafnyTranslator(ast.NodeVisitor):
         func_translator = FunctionTranslator()
         self.src += func_translator.initiate_translation(defn)
 
-    def visit_Expr(self, expr):
-        """Append expr, which is expected to be the preconditions,
-        postconditions, and the docstring, to this FunctionTranslator's src
-        attribute.
+    def visit_For(self, for_):
+        """Raise a ForLoopError.
         """
-        L = expr.value.s.split("\n")
+        raise ForLoopError
 
-        docstring = '\n'
+    def visit_While(self, while_):
+        """Append the Dafny translation of the tree beginning at while_ to
+        this DafnyTranslator's src attribute.
+        """
 
+        loop_translator = LoopTranslator()
+        self.src += loop_translator.initiate_translation(while_)
+
+    def visit_Expr(self, expr):
+        """Append expr, which is expected to be a simple comment, to this
+        FunctionTranslator's src attribute.
+        """
+        # Check whether the parser remove the comment specifiers.
 
     def visit_If(self, if_):
         """Append the Dafny translation of the tree beginning at node if_ to
@@ -91,6 +133,7 @@ class DafnyTranslator(ast.NodeVisitor):
         self.src += " then\n"
         self._render_block(if_.body)
         self.src += self._indent()  # Check if anything needs to be appended.
+#   what does this mean
 
     def visit_Compare(self, compare):
         """Append the Dafny translation of the tree beginning at node compare to
@@ -104,6 +147,171 @@ class DafnyTranslator(ast.NodeVisitor):
         self.visit(compare.ops[0])
         self.src += " "
         self.visit(compare.comparators[0])
+
+
+
+
+class FunctionTranslator(DafnyTranslator):
+    """Translate a Python function into Dafny code."""
+
+    # Override the initialisation method.
+    def __init__(self):
+        super().__init__()
+
+        self.indent = super().indent  # Same scope as parent's current level.
+
+        self.func_name = None  # Name of the function.
+        self.args = None  # Argument list in Dafny format.
+        # self.return_value = None  # Name of the return value. Not implemented.
+        self.return_type = None  # Type of the return value.
+
+        self.pre = None  # Boolean precondition.
+        self.post = None  # Boolean postcondition.
+        self.frame = None  # Comma delimited string of modified arguments.
+        self.rank = None  # Comma delimited string of decreasing arguments.
+
+        self.docstring = None  # The docstring of the function, with newlines.
+        self.body = None  # The body of the function.
+
+    def initiate_translation(self, defn):
+        """Translate the Python source code contained in the tree rooted in
+        node defn, which is expected to be a function definition, into Dafny
+        source code.
+
+        This method overrides the initiate_translation method of the parent
+        class DafnyTranslator.
+        """
+
+        # Access the function name string.
+        self.func_name = defn.name
+        self.func_name = self.func_name.replace('_', '')
+        self.func_name = self.func_name.capitalize()
+
+        # ADD CODE LATER TO CAPITALIZE THE WORD AFTER THE UNDERSCORE
+
+        # Create the argument specification, including parentheses.
+        self.args = '('
+        for arg in defn.args.args:
+            args + arg.arg  # Append the argument name.
+            args + ': '
+            args + arg.annotation.id  # Append the argument type.
+            args + ', '
+        self.args = self.args[:-2]  # Truncate the last comma and space.
+        self.args += ')'
+
+        # Proceed with the body of the function.
+        self._render_block(defn.body)
+
+
+        # Put everything together by appending to this FunctionTranslator's src
+        # attribute. At this point, the src attribute is expected to be None.
+
+        # Append the function name and type declarations.
+        self.src = "method "
+        self.src += self.func_name
+        self.src += self.args
+        self.src += " returns (result: "
+        self.src += self.return_type
+        self.src += ")\n"
+
+        # Append the docstring.
+        docstring = "// "
+        try:
+            self.docstring.split("\n")
+        except TypeError:
+            raise NoDocstringError
+        else:
+            for line in docstring:
+                docstring += line += "\n//"
+            docstring = docstring[:-2] # Truncate the extra newline and slashes.
+            self.src += docstring
+
+        # Append the precondition.
+        pre = "  requires "
+        try:
+            pre = pre + self.pre
+        except TypeError:
+            raise NoPreconditionError
+        else:
+            pre + ";\n"
+            self.src += pre
+
+        # Append the postcondition.
+        pre = "  ensures "
+        try:
+            pre = pre + self.pre
+        except TypeError:
+            raise NoPostconditionError
+        else:
+            pre + ";\n"
+            self.src += pre
+
+        # Append the frame set.
+        frame = "  modifies "
+        try:
+            frame = frame + self.frame
+        except TypeError:
+            raise NoFrameSetError
+        else:
+            frame + ";\n"
+            self.src += frame
+
+        # Append the rank set.
+        pre = "  decreases "
+        try:
+            rank = rank + self.rank
+        except TypeError:
+            raise NoRankSetError
+        else:
+            rank + ";\n"
+            self.src += rank
+
+        # Visit the body of the function.
+        self.src += "{\n"
+        self.visit(defn.body)
+        self.src += "\n}"
+
+        return self.src
+
+    def visit_Expr(self, expr):
+        """Parse the string in expr, which is expected to be function
+        preconditions, postconditions, the frame set and the rank set,
+        and the docstring, and add to this FunctionTranslator's appropriate
+        attribute.
+        """
+
+        L = expr.value.s.split("\n")
+
+        docstring = '//'
+
+        for line in L:
+            line = line.strip()
+            if line.startswith("pre"):
+                i = line.find(":")
+                line = line[i+1:]
+                line = line.strip()
+                self.pre = line
+            elif line.startswith("post"):
+                i = line.find(":")
+                line = line[i+1:]
+                line = line.strip()
+                self.post = line
+            elif line.startswith("mod"):
+                i = line.find(":")
+                line = line[i+1:]
+                line = line.strip()
+                self.frame = line
+            elif line.startswith("dec"):
+                i = line.find(":")
+                line = line[i+1:]
+                line = line.strip()
+                self.rank = line
+            else:
+                docstring += line + "//\n"
+
+        docstring = docstring.rstrip("\n /")
+        if len(docstring) > 0:
+            self.docstring
 
     def visit_Return(self, ret):
         """Append the Dafny translation of the tree beginning at node ret to
@@ -126,108 +334,15 @@ class DafnyTranslator(ast.NodeVisitor):
             self.src += self._indent("return")
 
 
-
-
-class FunctionTranslator(DafnyTranslator):
-    """Translate a Python function into Dafny code."""
+class LoopTranslator(FunctionTranslator):
 
     # Override the initialisation method.
     def __init__(self):
-        self.func_name = "" # Name of the function.
-        self.args = "" # Argument list in Dafny format.
-        self.return_value = "" # Name of the return value.
-        self.return_type = "" # Type of the return value.
+        super().__init__()
 
-        self.pre = "" # Boolean precondition.
-        self.post = "" # Boolean postcondition.
-        self.frame = ""  # Comma delimited string of modified arguments.
-        self.rank = ""  # Comma delimited string of decreasing arguments.
+        self.indent = super().indent  # Same scope as parent's current level.
 
-    def initiate_translation(defn):
-        """Translate the Python source code contained in the tree rooted in
-        node defn, which is expected to be a function definition, into Dafny
-        source code.
-
-        This method overrides the initiate_translation method of the parent
-        class DafnyTranslator.
-        """
-
-        # Create the function name string.
-        funcname = defn.name
-        funcname.replace('_', '')
-        funcname.capitalize()
-
-        # Create the argument string, including parentheses.
-        args = '('
-        for arg in defn.args.args:
-            args + arg.arg  # Append the argument name.
-            args + ': '
-            args + arg.annotation.id  # Append the argument type.
-            args + ', '
-        args = args[:-2]  # Truncate the last comma and space.
-        args + ')'
-
-        # Create the first line of the function definition.
-        firstline = "method " + funcname + args
-        self.src += self._indent(firstline)
-
-        # Check if a return specification needs to be inserted into the
-        # Dafny specification.
-        if self.returns == True:
-
-            self.src += " returns (result: "
-
-            # Get the type of the return value.
-            # self.src += defn.returns.id
-            self.src += ")\n"
-
-            # Set this DafnyTranslator's returns attribute to the default.
-            self.returns = False
-
-        # Function opening brace.
-        self.src += "{"
-        # Proceed with the body of the function.
-        self._render_block(defn.body)
-
-        self.src += self._indent("}\n")
-
-    def visit_Expr(self, expr):
-        """Append expr, which is expected to be the preconditions,
-        postconditions, and the docstring, to this FunctionTranslator's src
-        attribute.
-        """
-        L = expr.value.s.split("\n")
-
-        docstring = '\n'
-
-        for line in L:
-            if line.startswith("Pre"):
-                # pre = _format_precondition(L[0].replace("Pre: ", "")) + '\n'
-                pass
-            elif line.startswith("Post"):
-                # post = _format_postcondition(L[1].replace("Post: ", "")) + '\n'
-                pass
-            else:
-                docstring += '// ' + line
-
-        # Get rid of the last comment designation.
-        docstring = docstring.rstrip("\n /")
-
-        pre = ''
-        post = ''
-
-        self.src += pre + post + docstring
-
-    def _format_precondition(s):
-        """Return s in the form of a Dafny precondition.
-        """
-
-        return s
-
-    def _format_postcondition(s):
-        """Return s in the form of a Dafny postcondition.
-        """
-
-        return s
+        self.invariant = None  # The loop invariant.
+        self.body = None  # The body of the function.
 
 
