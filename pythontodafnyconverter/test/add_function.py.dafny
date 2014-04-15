@@ -1,5 +1,5 @@
-def add(x: int, y: int) -> int:
-    """Return the sum of x and y.
-    """
-
-    return x + y
+method Add(x: int, y: int) returns (result: int)
+// Return the sum of x and y.
+{
+  result := x + y;
+}

@@ -32,10 +32,10 @@ class NoAttributeError(Error):
         msg -- explanation of the error
     """
 
-    # Override.
-    def __init__(self, attr, msg):
-        self.attr = attr
-        self.msg = msg
+## Override.
+#    def __init__(self, attr, msg):
+#        self.attr = attr
+#        self.msg = msg
 
 
 class NoPreconditionError(NoAttributeError):
@@ -46,6 +46,11 @@ class NoPreconditionError(NoAttributeError):
 
 class NoPostconditionError(NoAttributeError):
     """Exception raised when no postcondition is defined."""
+
+    pass
+
+class NoDocstringError(NoAttributeError):
+    """Exception raised when no docstring is defined."""
 
     pass
 
@@ -68,7 +73,7 @@ class DafnyTranslator(ast.NodeVisitor):
     """Translate Python code into Dafny code."""
 
     def __init__(self):
-        self.src = Nonce # Dafny source code to be built upon.
+        self.src = ""  # Dafny source code to be built upon.
         self.indent = 0  # Scope indentation level.
 
     def initiate_translate(self, node):
@@ -98,27 +103,28 @@ class DafnyTranslator(ast.NodeVisitor):
         this DafnyTranslator's src attribute.
         """
 
-        func_translator = FunctionTranslator()
+        func_translator = FunctionTranslator(self.indent)
         self.src += func_translator.initiate_translation(defn)
 
     def visit_For(self, for_):
         """Raise a ForLoopError.
         """
         raise ForLoopError
+        # TODO: integrate for loops as while loops
 
     def visit_While(self, while_):
         """Append the Dafny translation of the tree beginning at while_ to
         this DafnyTranslator's src attribute.
         """
 
-        loop_translator = LoopTranslator()
+        loop_translator = LoopTranslator(self.indent)
         self.src += loop_translator.initiate_translation(while_)
 
     def visit_Expr(self, expr):
         """Append expr, which is expected to be a simple comment, to this
         FunctionTranslator's src attribute.
         """
-        # Check whether the parser remove the comment specifiers.
+        # TODO: Check whether the parser remove the comment specifiers.
 
     def visit_If(self, if_):
         """Append the Dafny translation of the tree beginning at node if_ to
@@ -155,14 +161,14 @@ class FunctionTranslator(DafnyTranslator):
     """Translate a Python function into Dafny code."""
 
     # Override the initialisation method.
-    def __init__(self):
+    def __init__(self, indent):
         super().__init__()
 
-        self.indent = super().indent  # Same scope as parent's current level.
+        self.indent = indent  # Same scope as parent's current level.
 
         self.func_name = None  # Name of the function.
         self.args = None  # Argument list in Dafny format.
-        # self.return_value = None  # Name of the return value. Not implemented.
+        self.return_value = None  # Name of the return value.
         self.return_type = None  # Type of the return value.
 
         self.pre = None  # Boolean precondition.
@@ -192,12 +198,15 @@ class FunctionTranslator(DafnyTranslator):
         # Create the argument specification, including parentheses.
         self.args = '('
         for arg in defn.args.args:
-            args + arg.arg  # Append the argument name.
-            args + ': '
-            args + arg.annotation.id  # Append the argument type.
-            args + ', '
+            self.args += arg.arg  # Append the argument name.
+            self.args += ': '
+            self.args += arg.annotation.id  # Append the argument type.
+            self.args += ', '
         self.args = self.args[:-2]  # Truncate the last comma and space.
         self.args += ')'
+
+        # Get the type of the return value.
+        self.return_type = defn.returns.id
 
         # Proceed with the body of the function.
         self._render_block(defn.body)
@@ -210,28 +219,27 @@ class FunctionTranslator(DafnyTranslator):
         self.src = "method "
         self.src += self.func_name
         self.src += self.args
-        self.src += " returns (result: "
-        self.src += self.return_type
-        self.src += ")\n"
+
+        try:
+            self.src += " returns (result: " + self.return_type + ")"
+        except TypeError:
+            pass  # Append nothing if there was no return value.
+        self.src += "\n"
 
         # Append the docstring.
-        docstring = "// "
         try:
-            self.docstring.split("\n")
+            self.src += self.docstring + "\n"
         except TypeError:
-            raise NoDocstringError
-        else:
-            for line in docstring:
-                docstring += line += "\n//"
-            docstring = docstring[:-2] # Truncate the extra newline and slashes.
-            self.src += docstring
+#            raise NoDocstringError
+            pass
 
         # Append the precondition.
         pre = "  requires "
         try:
             pre = pre + self.pre
         except TypeError:
-            raise NoPreconditionError
+#            raise NoPreconditionError
+            pass
         else:
             pre + ";\n"
             self.src += pre
@@ -241,7 +249,8 @@ class FunctionTranslator(DafnyTranslator):
         try:
             pre = pre + self.pre
         except TypeError:
-            raise NoPostconditionError
+#            raise NoPostconditionError
+            pass
         else:
             pre + ";\n"
             self.src += pre
@@ -251,24 +260,26 @@ class FunctionTranslator(DafnyTranslator):
         try:
             frame = frame + self.frame
         except TypeError:
-            raise NoFrameSetError
+#            raise NoFrameSetError
+            pass
         else:
             frame + ";\n"
             self.src += frame
 
         # Append the rank set.
-        pre = "  decreases "
+        rank = "  decreases "
         try:
             rank = rank + self.rank
         except TypeError:
-            raise NoRankSetError
+#            raise NoRankSetError
+            pass
         else:
             rank + ";\n"
             self.src += rank
 
         # Visit the body of the function.
         self.src += "{\n"
-        self.visit(defn.body)
+        self._render_block(defn.body)
         self.src += "\n}"
 
         return self.src
@@ -280,9 +291,10 @@ class FunctionTranslator(DafnyTranslator):
         attribute.
         """
 
-        L = expr.value.s.split("\n")
+        docstring = expr.value.s.strip()
+        L = docstring.split("\n")
 
-        docstring = '//'
+        docstring = '// '
 
         for line in L:
             line = line.strip()
@@ -307,11 +319,11 @@ class FunctionTranslator(DafnyTranslator):
                 line = line.strip()
                 self.rank = line
             else:
-                docstring += line + "//\n"
+                docstring += line + "\n// "
 
         docstring = docstring.rstrip("\n /")
         if len(docstring) > 0:
-            self.docstring
+            self.docstring = docstring
 
     def visit_Return(self, ret):
         """Append the Dafny translation of the tree beginning at node ret to
@@ -320,27 +332,17 @@ class FunctionTranslator(DafnyTranslator):
         This function translates a return statement, calling the visit function
         on the return expression.
         """
-
-        if ret.value:
-            # This function returns something.
-            self.returns = True
-
-            self.src += "\n"
-
-            self.src += self._indent("result = ")  # Create the return variable
-            self.visit(ret.value)
-            self.src += "\n"
-
-            self.src += self._indent("return")
+        self.return_value = ret.value  # TODO: Name of the return value.
+        # self.return_type = None  # Type of the return value.
 
 
 class LoopTranslator(FunctionTranslator):
 
     # Override the initialisation method.
-    def __init__(self):
+    def __init__(self, indent):
         super().__init__()
 
-        self.indent = super().indent  # Same scope as parent's current level.
+        self.indent = indent  # Same scope as parent's current level.
 
         self.invariant = None  # The loop invariant.
         self.body = None  # The body of the function.
