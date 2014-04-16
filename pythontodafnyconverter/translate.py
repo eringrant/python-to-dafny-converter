@@ -54,8 +54,20 @@ class NoDocstringError(NoAttributeError):
 
     pass
 
+class NoInvariantError(NoAttributeError):
+    """Exception raised when no invariant is defined."""
+
+    pass
+
 class ForLoopError(Error):
     """Exception raised when a for loop is encountered."""
+
+    pass
+
+class ExtraCommentError(Error):
+    """Exception raised when an extra comment can't be parsed."""
+
+    pass
 
 def translate(source):
     """Return a string containing the Dafny translation of the Python source
@@ -73,7 +85,8 @@ class DafnyTranslator(ast.NodeVisitor):
     """Translate Python code into Dafny code."""
 
     def __init__(self):
-        self.src = ""  # Dafny source code to be built upon.
+        self.src = ""  # Final Dafny source code.
+        self.body = ""  # Accumulator for translated material.
         self.indent = 0  # Scope indentation level.
 
     def initiate_translate(self, node):
@@ -83,6 +96,7 @@ class DafnyTranslator(ast.NodeVisitor):
         """
 
         self.visit(node)
+        self.src = self.body
         return self.src
 
     def _indent(self, line):
@@ -95,7 +109,8 @@ class DafnyTranslator(ast.NodeVisitor):
         """Render a block of code with the correct indentation.
         """
         self.indent += 2
-        for stmt in body: self.visit(stmt)
+        for stmt in body:
+            self.visit(stmt)
         self.indent -= 2
 
     def visit_FunctionDef(self, defn):
@@ -104,12 +119,13 @@ class DafnyTranslator(ast.NodeVisitor):
         """
 
         func_translator = FunctionTranslator(self.indent)
-        self.src += func_translator.initiate_translation(defn)
+        self.body += func_translator.initiate_translation(defn)
 
     def visit_For(self, for_):
         """Raise a ForLoopError.
         """
-        raise ForLoopError
+#        raise ForLoopError
+        pass
         # TODO: integrate for loops as while loops
 
     def visit_While(self, while_):
@@ -118,7 +134,7 @@ class DafnyTranslator(ast.NodeVisitor):
         """
 
         loop_translator = LoopTranslator(self.indent)
-        self.src += loop_translator.initiate_translation(while_)
+        self.body += loop_translator.initiate_translation(while_)
 
     def visit_Expr(self, expr):
         """Append expr, which is expected to be a simple comment, to this
@@ -134,11 +150,11 @@ class DafnyTranslator(ast.NodeVisitor):
         on its body.
         """
 
-        self.src += self._indent("if ")
+        self.body += self._indent("if ")
         self.visit(if_.test)
-        self.src += " then\n"
+        self.body += " then\n"
         self._render_block(if_.body)
-        self.src += self._indent()  # Check if anything needs to be appended.
+        self.body += self._indent()  # Check if anything needs to be appended.
 #   what does this mean
 
     def visit_Compare(self, compare):
@@ -149,12 +165,26 @@ class DafnyTranslator(ast.NodeVisitor):
         function on its children.
         """
         self.visit(compare.left)
-        self.src += " "
+        self.body += " "
         self.visit(compare.ops[0])
-        self.src += " "
+        self.body += " "
         self.visit(compare.comparators[0])
 
+    def visit_Assign(self, assign):
+        """Append the Dafny translation of assign to this
+        FunctionTranslator's body attribute.
+        """
+        self.body += value
+        self.body += targets  #TODO: will probably have to be visited
 
+    def visit_BinOp(self, bin_op):
+        pass
+
+    def visit_UnaryOp(self, unary_op):
+        pass
+
+    def visit_If(self, if_):
+        pass
 
 
 class FunctionTranslator(DafnyTranslator):
@@ -177,7 +207,6 @@ class FunctionTranslator(DafnyTranslator):
         self.rank = None  # Comma delimited string of decreasing arguments.
 
         self.docstring = None  # The docstring of the function, with newlines.
-        self.body = None  # The body of the function.
 
     def initiate_translation(self, defn):
         """Translate the Python source code contained in the tree rooted in
@@ -193,7 +222,7 @@ class FunctionTranslator(DafnyTranslator):
         self.func_name = self.func_name.replace('_', '')
         self.func_name = self.func_name.capitalize()
 
-        # ADD CODE LATER TO CAPITALIZE THE WORD AFTER THE UNDERSCORE
+        # TODO: ADD CODE LATER TO CAPITALIZE THE WORD AFTER THE UNDERSCORE
 
         # Create the argument specification, including parentheses.
         self.args = '('
@@ -206,6 +235,8 @@ class FunctionTranslator(DafnyTranslator):
         self.args += ')'
 
         # Get the type of the return value.
+
+# TODO: what if the function returns multiple things.
         self.return_type = defn.returns.id
 
         # Proceed with the body of the function.
@@ -279,7 +310,7 @@ class FunctionTranslator(DafnyTranslator):
 
         # Visit the body of the function.
         self.src += "{\n"
-        self._render_block(defn.body)
+        self.src += self.body
         self.src += "\n}"
 
         return self.src
@@ -326,25 +357,46 @@ class FunctionTranslator(DafnyTranslator):
             self.docstring = docstring
 
     def visit_Return(self, ret):
-        """Append the Dafny translation of the tree beginning at node ret to
-        this DafnyTranslator's src attribute.
-
-        This function translates a return statement, calling the visit function
-        on the return expression.
+        """Call the visit function on node ret's expresssion.
         """
-        self.return_value = ret.value  # TODO: Name of the return value.
-        # self.return_type = None  # Type of the return value.
 
+        self.body += self._indent("result := ")
+        self.visit(ret.value)
 
 class LoopTranslator(FunctionTranslator):
 
     # Override the initialisation method.
     def __init__(self, indent):
-        super().__init__()
-
-        self.indent = indent  # Same scope as parent's current level.
+        super().__init__(indent)
 
         self.invariant = None  # The loop invariant.
-        self.body = None  # The body of the function.
 
+    def visit_Expr(self, expr):
+        """Parse the string in expr, which is expected to be the loop
+        invariant, and add to this LoopTranslator's invariant attribute.
+        """
+
+        expression = expr.value.s.strip()
+        L = expression.split("\n")
+
+        for line in L:
+            line = line.strip()
+            if line.startswith("inv"):
+                i = line.find(":")
+                line = line[i+1:]
+                line = line.strip()
+                self.invariant = line
+            elif line.startswith("mod"):
+                i = line.find(":")
+                line = line[i+1:]
+                line = line.strip()
+                self.frame = line
+            elif line.startswith("dec"):
+                i = line.find(":")
+                line = line[i+1:]
+                line = line.strip()
+                self.rank = line
+            else:
+#TODO:          raise ExtraCommentError
+                pass
 
