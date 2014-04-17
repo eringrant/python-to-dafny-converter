@@ -19,6 +19,48 @@ import ast
 __all__ = ['translate']
 
 
+# Constants representing Dafny operator syntax.
+BOOLOP_SYMBOLS = {
+        'And' : '&&',
+        'Or' : '||',
+}
+
+OPERATOR_SYMBOLS = {
+        'Add' : '+',
+        'Sub' : '-',
+        'Mult' : '*',
+        'Div' : '/',
+        'Mod' : '%',
+        'Pow' : '^',  #TODO: Check if this is the appropriate operator.
+        'LShift' : '<<',
+        'RShift' : '>>',
+        'BitOr' : '',  #TODO: Determine Dafny symbol.
+        'BitXor' : '',  #TODO: Determine Dafny symbol.
+        'BitAnd' : '',  #TODO: Determine Dafny symbol.
+        'FloorDiv' : '',  #TODO: Determine Dafny symbol.
+}
+
+UNARYOP_SYMBOLS = {
+        'Invert' : '',  #TODO: Determine Dafny symbol.
+        'Not' : '',  #TODO: Determine Dafny symbol.
+        'UAdd' : '',  #TODO: Determine Dafny symbol.
+        'USub' : '',  #TODO: Determine Dafny symbol.
+}
+
+CMPOP_SYMBOLS = {
+        'Eq' : '==',
+        'NotEq' : '!=',
+        'Lt' : '<',
+        'LtE' : '<=',
+        'Gt' : '>',
+        'GtE' : '>=',
+        'Is' : ''  #TODO: Determine Dafny symbol.
+        'IsNot' : ''  #TODO: Determine Dafny symbol.
+        'In' : ''  #TODO: Determine Dafny symbol.
+        'NotIn' : ''  #TODO: Determine Dafny symbol.
+}
+
+
 class Error(Exception):
     """Base class for exceptions in this module."""
 
@@ -85,18 +127,19 @@ class DafnyTranslator(ast.NodeVisitor):
     """Translate Python code into Dafny code."""
 
     def __init__(self):
-        self.src = ""  # Final Dafny source code.
-        self.body = ""  # Accumulator for translated material.
-        self.indent = 0  # Scope indentation level.
+        self.src = None  # Final Dafny source code.
+        self.body = []  # Accumulator for translated material.
+        self.indent = 0  # Indentation scope level.
+        self.if_scope = 0  # Level of embedding in an if statement.
 
     def initiate_translate(self, node):
-        """Call the visit function, which adds the Python source code from the
+        """Add the Dafny translation of the Python source code from the
         abstract syntax tree beginning in node to this DafnyTranslator's
         source attribute. Return this DafnyTranslator's source attribute.
         """
 
         self.visit(node)
-        self.src = self.body
+        self.src = "".join(self.body)
         return self.src
 
     def _indent(self, line):
@@ -108,6 +151,7 @@ class DafnyTranslator(ast.NodeVisitor):
     def _render_block(self, body):
         """Render a block of code with the correct indentation.
         """
+
         self.indent += 2
         for stmt in body:
             self.visit(stmt)
@@ -115,11 +159,11 @@ class DafnyTranslator(ast.NodeVisitor):
 
     def visit_FunctionDef(self, defn):
         """Append the Dafny translation of the tree beginning at node defn to
-        this DafnyTranslator's src attribute.
+        this DafnyTranslator's body attribute.
         """
 
         func_translator = FunctionTranslator(self.indent)
-        self.body += func_translator.initiate_translation(defn)
+        self.body.append(func_translator.initiate_translation(defn))
 
     def visit_For(self, for_):
         """Raise a ForLoopError.
@@ -130,11 +174,11 @@ class DafnyTranslator(ast.NodeVisitor):
 
     def visit_While(self, while_):
         """Append the Dafny translation of the tree beginning at while_ to
-        this DafnyTranslator's src attribute.
+        this DafnyTranslator's body attribute.
         """
 
         loop_translator = LoopTranslator(self.indent)
-        self.body += loop_translator.initiate_translation(while_)
+        self.body.append(loop_translator.initiate_translation(while_))
 
     def visit_Expr(self, expr):
         """Append expr, which is expected to be a simple comment, to this
@@ -150,12 +194,13 @@ class DafnyTranslator(ast.NodeVisitor):
         on its body.
         """
 
-        self.body += self._indent("if ")
+        self.body.append(self._indent("if "))
         self.visit(if_.test)
-        self.body += " then\n"
+        self.body += "{\n"
         self._render_block(if_.body)
-        self.body += self._indent()  # Check if anything needs to be appended.
-#   what does this mean
+        self.body += self._indent("}\n")
+
+#TODO: implement a generator in order to exhaust the if node
 
     def visit_Compare(self, compare):
         """Append the Dafny translation of the tree beginning at node compare to
@@ -224,14 +269,10 @@ class FunctionTranslator(DafnyTranslator):
 
         # TODO: ADD CODE LATER TO CAPITALIZE THE WORD AFTER THE UNDERSCORE
 
-        # Create the argument specification, including parentheses.
+        # Create the argument name an type specification with parentheses.
         self.args = '('
-        for arg in defn.args.args:
-            self.args += arg.arg  # Append the argument name.
-            self.args += ': '
-            self.args += arg.annotation.id  # Append the argument type.
-            self.args += ', '
-        self.args = self.args[:-2]  # Truncate the last comma and space.
+        self.args += ','.join((arg.arg + ': ' + arg.annotation.id) for arg in
+                defn.args.args)
         self.args += ')'
 
         # Get the type of the return value.
@@ -362,6 +403,8 @@ class FunctionTranslator(DafnyTranslator):
 
         self.body += self._indent("result := ")
         self.visit(ret.value)
+
+#TODO: for multiple returns (i.e., tuples), think about using a dictionary
 
 class LoopTranslator(FunctionTranslator):
 
