@@ -1,24 +1,45 @@
-import os
+import sys
+import os.path
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 import unittest
-import nose
-import pythontodafnyconverter.translate
+import translate
 import ast
 
 
-class TestTranslate(unittest.TestCase):
+class TestTranslateIntegration(unittest.TestCase):
 
     def test_translate_one_arg(self):
         """Test translate on a function with one argument value, no return
         value, no preconditions, and no postconditions.
         """
 
-        with open("/home/erin/Git/PythonToDafnyConverter/pythontodafnyconverter/test/identity_function.py") as f:
-            source = f.read()
+        with open('./test/identity_function.py') as f:
+        	source = f.read()
 
-        actual = pythontodafnyconverter.translate.initiate_translation(source)
+        actual = translate.translate(source)
 
         with open('./test/identity_function.py.dafny') as f:
             expected = f.read()
 
         self.assertEqual(actual, expected)
 
+    def test_translate_two_args(self):
+        """Test translate on a function with one argument value, no return
+        value, no preconditions, and no postconditions.
+        """
+
+        with open('./test/add_function.py') as f:
+        	source = f.read()
+
+        actual = translate.translate(source)
+
+        with open('./test/add_function.py.dafny') as f:
+            expected = f.read()
+
+        self.assertEqual(actual, expected)
+
+
+if __name__ == '__main__':
+    unittest.main()

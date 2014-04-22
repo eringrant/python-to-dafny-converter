@@ -1,0 +1,29 @@
+import sys
+import os.path
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+import unittest
+import translate
+import ast
+
+
+class TestTranslateIntegration(unittest.TestCase):
+
+    def test_translate_one_arg(self):
+        """Test translate on a function with one argument value, no return
+        value, no preconditions, and no postconditions.
+        """
+
+        with open("./identity_function.py") as f:
+            source = f.read()
+
+        actual = pythontodafnyconverter.translate.translate(source)
+
+        with open('./test/identity_function.py.dafny') as f:
+            expected = f.read()
+
+        self.assertEqual(actual, expected)
+
+if __name__ == '__main__':
+    unittest.main()
