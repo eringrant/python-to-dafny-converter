@@ -116,7 +116,7 @@ def translate(source):
     """Return a string containing the Dafny translation of the Python source
     code in string source.
     """
-
+    assert isinstance(source, str)
     # Create the abstract syntax tree from the source code.
     tree = ast.parse(source)
 
@@ -147,7 +147,12 @@ class DafnyTranslator(ast.NodeVisitor):
         abstract syntax tree beginning in node to this DafnyTranslator's
         source attribute. Return this DafnyTranslator's source attribute.
         """
-        self.append(self.visit(node))
+        print(ast.dump(node))
+        s = self.visit(node)
+        print(self.body)
+        print(self.src) #TODO
+        assert isinstance(s, str)
+        self.append(s)
         return self.get_source_code()
 
     def _indent(self, line):
@@ -174,8 +179,15 @@ class DafnyTranslator(ast.NodeVisitor):
         this DafnyTranslator's body attribute.
         """
 
-        func_translator = FunctionTranslator(self.indent)
-        return func_translator.initiate_translation(defn)
+        if "function" in defn.name:
+            translator = FunctionTranslator(self.indent)
+            return translator.initiate_translation(defn)
+        elif "method" in defn.name:
+            translator = MethodTranslator(self.indent)
+            return translator.initiate_translation(defn)
+        else:
+#            raise NoTypeSpecifiedError  #TODO: create exception
+            pass
 
     def visit_For(self, for_):
         """Raise a ForLoopError.
@@ -233,22 +245,33 @@ class DafnyTranslator(ast.NodeVisitor):
         """Append the Dafny translation of assign to this
         FunctionTranslator's body attribute.
         """
-        s = value
+        s = self.visit(assign.value)
         s += " := "
-        s += self.visit(targets)  #TODO: check that produces correct output
+        s += self.visit(assign.targets)  #TODO: check that produces correct output
         return s
 
     def visit_BinOp(self, bin_op):
-        pass
+        s = self.visit(bin_op.left)
+        s += OPERATOR_SYMBOLS[bin_op.op]
+        s += self.visit(bin_op.right)  #TODO: check that produces correct output
+        return s
 
     def visit_UnaryOp(self, unary_op):
-        pass
+        s = UNARYOP_SYMBOLS[unary_op.op]
+        s += self.visit(unary_op.operand)  #TODO: check that produces correct output
+        return s
 
     def visit_If(self, if_):
-        pass
+        if self.if_scope > 0
+        s = "if "
+        s +=
 
+    def visit_BoolOp(self, bool_op):
+        s = BOOLOP_SYMBOLS[bool_op.op]
+        s += self.visit(bool_op.values)
+        return s
 
-class FunctionTranslator(DafnyTranslator):
+class MethodTranslator(DafnyTranslator):
     """Translate a Python function into Dafny code."""
 
     # Override the initialisation method.
@@ -268,6 +291,7 @@ class FunctionTranslator(DafnyTranslator):
         self.rank = None  # Comma delimited string of decreasing arguments.
 
         self.docstring = None  # The docstring of the function.
+        self.function_body = None  # The body of the function.
 
     def initiate_translation(self, defn):
         """Translate the Python source code contained in the tree rooted in
@@ -281,9 +305,17 @@ class FunctionTranslator(DafnyTranslator):
         self.set_arguments(defn)
 
         # Proceed with the body of the function.
-        body = self._render_block(defn.body)
+        self.body = self._render_block(defn.body)
 
-        s = "method "
+        return self.compile_body()
+
+    def compile_body(self):
+        if isinstance(self, MethodTranslator):
+            s = "method  "
+        elif isinstance(self, FunctionTranslator):
+            s = "function  "
+        else:
+            print("Wrong class reached function def translation.") #TODO
 
         try:
             s += self.func_name
@@ -292,16 +324,25 @@ class FunctionTranslator(DafnyTranslator):
             pass
 
         try:
-            s += "(" + self.get_args += ")"
+            s += "(" + self.get_args + ")"
         except TypeError:
 #            raise NoArgumentsError
             pass
 
-        try:
-            s += " returns (" + self.get_returns + ")"
-        except TypeError:
-            pass  # Append nothing if there was no return value.
-        s += "\n"
+        if isinstance(self, MethodTranslator):
+            try:
+                s += " returns (" + self.get_returns + ")"
+            except TypeError:
+                pass  # Append nothing if there was no return value.
+            s += "\n"
+        elif isinstance(self, FunctionTranslator):
+            try:
+                s += ": " + self.get_returns
+            except TypeError:
+                pass  # Append nothing if there was no return value.
+            s += "\n"
+        else:
+            print("Wrong class reached function def translation.") #TODO
 
         try:
             s += self.pre
@@ -362,7 +403,7 @@ class FunctionTranslator(DafnyTranslator):
         return None.
         """
         L = []
-        for arg in self.args
+        for arg in self.args:
             L.append(arg + ": " + self.args[arg])
         if L:
             return ", ".join(L)
@@ -375,7 +416,7 @@ class FunctionTranslator(DafnyTranslator):
         return None.
         """
         L = []
-        for value in self.returns
+        for value in self.returns:
             L.append(value + ": " + self.returns[value])
         if L:
             return ", ".join(L)
@@ -464,6 +505,61 @@ class FunctionTranslator(DafnyTranslator):
         self.visit(ret.value)
 
 #TODO: for multiple returns (i.e., tuples), think about using a dictionary
+
+class FunctionTranslator(MethodTranslator):
+    """Translate a Python function into Dafny function code."""
+
+    # Override the initialisation method.
+    def __init__(self, indent):
+        super().__init__()
+
+        self.returns = None
+        # A function in Dafny only has specification for return value type.
+
+
+    def initiate_translation(self, defn):
+        """Translate the Python source code contained in the tree rooted in
+        node defn, which is expected to be a function definition, into Dafny
+        source code.
+
+        This method overrides the initiate_translation method of the parent
+        class DafnyTranslator.
+        """
+        self.set_function_name(defn)
+        self.set_arguments(defn)
+        self.set_returns(defn)
+
+    def set_returns(self, defn):
+        """Set this FunctionTranslator's return type specifications according to the
+        information contained in node defn.
+
+        Override from parent MethodTranslator.
+        """
+        assert isinstance(defn, FunctionDef)
+        self.returns = defn.returns.id
+        assert isinstance(self.returns, str)
+
+    def visit_Expr(self, expr):
+        """Parse the string in expr, which is expected to be function
+        preconditions, postconditions, the frame set and the rank set,
+        and the docstring, and add to this FunctionTranslator's appropriate
+        attribute.
+        """
+        s = expr.value.s.strip()
+        L = s.split("\n")
+
+        for line in L:
+            line = line.strip()
+            if line.startswith("pre"):
+                self.set_precondition(self.remove_spec(line))
+            elif line.startswith("post"):
+                self.set_postcondition(self.remove_spec(line))
+            elif line.startswith("mod"):
+                self.set_frame(self.remove_spec(line))
+            elif line.startswith("dec"):
+                self.set_rank(self.remove_spec(line))
+            else:
+                self.set_docstring(self.remove_spec(line))
 
 class LoopTranslator(FunctionTranslator):
 
